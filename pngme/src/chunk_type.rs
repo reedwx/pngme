@@ -1,4 +1,4 @@
-//#![allow(warnings)]
+#![allow(warnings)]
 //#![warn(unused_imports)]
 
 use crate::{Error, Result};
