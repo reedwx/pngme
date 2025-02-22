@@ -88,20 +88,20 @@ impl TryFrom<&[u8]> for Chunk {
     fn try_from(chunk: &[u8]) -> Result<Self, Self::Error> {
         //length is first four bytes of array
         //need to check if overflow
-        if chunk.len() < 8 {
+        if chunk.len() < 12 {
             return Err(Box::new(ChunkError {
-                err: "too short".to_owned(),
+                err: "chunk is too short".to_owned(),
             }));
         }
         let buf: [u8; 4] = <[u8; 4]>::try_from(&chunk[0..4]).unwrap();
 
         //check if there's overflow
-        //process length as u64 then see if it's larger than max u32
+        //process length as u64 then see if it's larger than max
         let buf_copy: [u8; 8] = [0, 0, 0, 0, buf[0], buf[1], buf[2], buf[3]];
         let big_len: u64 = u64::from_be_bytes(buf_copy);
         if big_len > u32::MAX.into() {
             return Err(Box::new(ChunkError {
-                err: "length is too big".to_owned(),
+                err: "length exceeds max size of u32".to_owned(),
             }));
         }
         let len: u32 = u32::from_be_bytes(buf);
@@ -109,19 +109,48 @@ impl TryFrom<&[u8]> for Chunk {
         //next four bytes are chunk type
         let chunk_type: [u8; 4] = <[u8; 4]>::try_from(&chunk[4..8]).unwrap();
         let chunk_type_fin = ChunkType::try_from(chunk_type)?;
+        if !chunk_type_fin.is_valid() {
+            return Err(Box::new(ChunkError {
+                err: "chunk type not valid".to_owned(),
+            }));
+        }
 
         //every byte after is chunk data
+        /*let chunk_data: Vec<u8> = <[u8; 4]>::try_from(&chunk[8..usize::try_from(8 + len)?])
+        .unwrap()
+        .to_vec();*/
+
         let mut i = 0;
+        //push chunk_data into a vector v
         let mut v: Vec<u8> = Vec::new();
+        let mut crc_bytes: Vec<u8> = Vec::new();
+
+        //push (length) number of bytes onto v
+        //push every byte after that onto crc
         for byte in chunk.iter() {
-            if i >= 8 {
+            if i >= 8 && i < 8 + len {
                 v.push(*byte);
+            } else if i >= 8 + len {
+                crc_bytes.push(*byte);
             }
             i += 1;
         }
 
+        //need to check if length corresponds to chunk_data length
+        if v.len() != len.try_into()? {
+            return Err(Box::new(ChunkError {
+                err: "length does not match chunk_data length".to_owned(),
+            }));
+        }
+
         //need to combine chunk type and chunk data into one array for the crc
         let crc_fin = crc::crc32::checksum_ieee(&[chunk_type.as_slice(), v.as_slice()].concat());
+        let crc_from_crc_bytes = u32::from_be_bytes(crc_bytes.as_slice().try_into()?);
+        if crc_fin != crc_from_crc_bytes {
+            return Err(Box::new(ChunkError {
+                err: "expected crc does not match the actual crc".to_owned(),
+            }));
+        }
 
         Ok(Chunk {
             length: len,
