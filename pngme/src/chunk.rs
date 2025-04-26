@@ -7,6 +7,7 @@ use std::fmt;
 use std::fmt::Display;
 use std::io::{BufReader, Read};
 
+#[derive(Debug)]
 pub struct Chunk {
     length: u32,
     chunk_type: ChunkType,
@@ -44,9 +45,6 @@ impl Chunk {
 
     pub fn data_as_string(&self) -> crate::Result<String> {
         let mut v: Vec<u8> = Vec::new();
-        /*for byte in self.chunk_type.bytes().iter() {
-            v.push(*byte);
-        }*/
         for byte in self.chunk_data.iter() {
             v.push(*byte);
         }
@@ -62,12 +60,6 @@ impl Chunk {
             .chain(self.crc.to_be_bytes().iter())
             .copied()
             .collect::<Vec<u8>>()
-        /*let type_bytes: &[u8] = self.chunk_type.bytes().iter();
-        let crc_bytes: &[u8] = self.crc.to_be_bytes().iter();
-        len.chain(type_bytes)
-            .chain(&self.chunk_data)
-            .chain(crc_bytes)
-            .collect::<Vec<u8>>()*/
     }
 }
 
@@ -115,17 +107,12 @@ impl TryFrom<&[u8]> for Chunk {
             }));
         }
 
-        //every byte after is chunk data
-        /*let chunk_data: Vec<u8> = <[u8; 4]>::try_from(&chunk[8..usize::try_from(8 + len)?])
-        .unwrap()
-        .to_vec();*/
-
         let mut i = 0;
         //push chunk_data into a vector v
         let mut v: Vec<u8> = Vec::new();
         let mut crc_bytes: Vec<u8> = Vec::new();
 
-        //push (length) number of bytes onto v
+        //push (length) number of bytes onto chunk_data vector
         //push every byte after that onto crc
         for byte in chunk.iter() {
             if i >= 8 && i < 8 + len {
@@ -145,6 +132,7 @@ impl TryFrom<&[u8]> for Chunk {
 
         //need to combine chunk type and chunk data into one array for the crc
         let crc_fin = crc::crc32::checksum_ieee(&[chunk_type.as_slice(), v.as_slice()].concat());
+        //check crc from leftover bytes against crc calc'd from chunk_type + chunk_data
         let crc_from_crc_bytes = u32::from_be_bytes(crc_bytes.as_slice().try_into()?);
         if crc_fin != crc_from_crc_bytes {
             return Err(Box::new(ChunkError {
@@ -163,7 +151,7 @@ impl TryFrom<&[u8]> for Chunk {
 
 #[derive(Debug)]
 pub struct ChunkError {
-    err: String,
+    pub err: String,
 }
 
 impl fmt::Display for ChunkError {
