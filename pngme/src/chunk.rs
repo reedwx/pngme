@@ -15,6 +15,8 @@ pub struct Chunk {
     crc: u32,
 }
 
+const MAXIMUM_LENGTH: u32 = (1 << 31) - 1;
+
 impl Chunk {
     pub fn new(chunk_type: ChunkType, chunk_data: Vec<u8>) -> Self {
         Chunk {
@@ -57,6 +59,7 @@ impl Chunk {
             .to_be_bytes()
             .iter()
             .chain(self.chunk_type.bytes().iter())
+            .chain(self.data().iter())
             .chain(self.crc.to_be_bytes().iter())
             .copied()
             .collect::<Vec<u8>>()
@@ -148,6 +151,12 @@ impl TryFrom<&[u8]> for Chunk {
         })
     }
 }
+
+/*
+return Err(Box::new(ChunkError {
+                err: "expected crc does not match the actual crc".to_owned(),
+            }));
+ */
 
 #[derive(Debug)]
 pub struct ChunkError {
