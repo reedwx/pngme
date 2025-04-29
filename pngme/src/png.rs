@@ -121,6 +121,7 @@ impl TryFrom<&[u8]> for Png {
             }
         }
         let mut chunk_vec: Vec<Chunk> = Vec::new();
+        let mut chunk_list = chunk_list;
         //strat: read length, then split on that many bytes
         while chunk_list.len() > 0 {
             //assume start of new chunk
@@ -136,7 +137,8 @@ impl TryFrom<&[u8]> for Png {
                 }));
             }
             let len: u32 = u32::from_be_bytes(buf);
-            let (chunk, chunk_list) = chunk_list.split_at((4 + 4 + len + 4).try_into().unwrap());
+            let (chunk, rest) = chunk_list.split_at((4 + 4 + len + 4).try_into().unwrap());
+            chunk_list = rest;
             chunk_vec.push(Chunk::try_from(chunk)?);
         }
         Ok(Png {
