@@ -15,8 +15,6 @@ pub struct Chunk {
     crc: u32,
 }
 
-const MAXIMUM_LENGTH: u32 = (1 << 31) - 1;
-
 impl Chunk {
     pub fn new(chunk_type: ChunkType, chunk_data: Vec<u8>) -> Self {
         Chunk {
@@ -45,7 +43,7 @@ impl Chunk {
         &self.chunk_data.as_slice()
     }
 
-    pub fn data_as_string(&self) -> crate::Result<String> {
+    pub fn data_as_string(&self) -> Result<String, Box<dyn Error>> {
         let mut v: Vec<u8> = Vec::new();
         for byte in self.chunk_data.iter() {
             v.push(*byte);
@@ -79,7 +77,7 @@ impl fmt::Display for Chunk {
 }
 
 impl TryFrom<&[u8]> for Chunk {
-    type Error = crate::Error;
+    type Error = Box<dyn Error>;
     fn try_from(chunk: &[u8]) -> Result<Self, Self::Error> {
         //length is first four bytes of array
         //need to check if overflow

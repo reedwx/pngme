@@ -1,9 +1,10 @@
 #![allow(warnings)]
 //#![warn(unused_imports)]
 
-use crate::{Error, Result};
 use std::convert::TryFrom;
+use std::error::Error;
 use std::fmt;
+use std::result::Result;
 use std::str::FromStr;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -68,8 +69,8 @@ impl fmt::Display for ChunkType {
 }
 
 impl TryFrom<[u8; 4]> for ChunkType {
-    type Error = crate::Error;
-    fn try_from(chunk_type: [u8; 4]) -> Result<Self> {
+    type Error = Box<dyn Error>;
+    fn try_from(chunk_type: [u8; 4]) -> Result<Self, Self::Error> {
         for byte in chunk_type.iter() {
             if !(byte.is_ascii_uppercase() || byte.is_ascii_lowercase()) {
                 return Err(Box::new(ChunkTypeDecodingError::BadByte(*byte)));
@@ -80,8 +81,8 @@ impl TryFrom<[u8; 4]> for ChunkType {
 }
 
 impl FromStr for ChunkType {
-    type Err = crate::Error;
-    fn from_str(s: &str) -> Result<Self> {
+    type Err = Box<dyn Error>;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         let bytes = s.as_bytes();
         if bytes.len() != 4 {
             return Err(Box::new(ChunkTypeDecodingError::BadLength(s.len())));

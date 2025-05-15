@@ -1,7 +1,11 @@
+#![allow(unused_imports)]
+#![allow(unused_variables)]
+#![warn(dead_code)]
+
 use std::convert::TryFrom;
 use std::fmt;
 use std::fs;
-use std::io::{BufReader, Read};
+use std::io::{self, BufReader, Read};
 use std::path::Path;
 use std::str::FromStr;
 
@@ -9,80 +13,67 @@ use crate::chunk::Chunk;
 use crate::chunk::ChunkError;
 use crate::chunk_type::ChunkType;
 
-use crate::{Error, Result};
-
 #[derive(Debug)]
-struct Png {
+pub struct Png {
     header: [u8; 8],
     chunks: Vec<Chunk>,
 }
 
 impl Png {
-    // Fill in this array with the correct values per the PNG spec
     pub const STANDARD_HEADER: [u8; 8] = [137, 80, 78, 71, 13, 10, 26, 10];
 
-    /// Creates a `Png` from a list of chunks using the correct header
     pub fn from_chunks(chunks: Vec<Chunk>) -> Self {
         Png {
             header: Self::STANDARD_HEADER,
-            chunks: chunks,
+            chunks,
         }
     }
 
-    /// Creates a `Png` from a file path
-    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
-        todo!()
+    pub fn from_file<P: AsRef<Path>>(path: P) -> io::Result<Self> {
+        let bytes = fs::read(path)?;
+        Png::try_from(bytes.as_slice()).map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("PNG parse error: {}", e),
+            )
+        })
     }
 
-    /// Appends a chunk to the end of this `Png` file's `Chunk` list.
     pub fn append_chunk(&mut self, chunk: Chunk) {
         self.chunks.push(chunk);
     }
 
-    /// Searches for a `Chunk` with the specified `chunk_type` and removes the first
-    /// matching `Chunk` from this `Png` list of chunks.
-    pub fn remove_first_chunk(&mut self, chunk_type: &str) -> Result<Chunk> {
-        let matched_chunk_type: ChunkType = FromStr::from_str(chunk_type)?;
+    pub fn remove_first_chunk(&mut self, chunk_type: &str) -> Result<Chunk, PngError> {
+        let matched_chunk_type = ChunkType::from_str(chunk_type)
+            .map_err(|e| PngError::new(format!("Invalid chunk type: {}", e)))?;
         for i in 0..self.chunks.len() {
             if *self.chunks[i].chunk_type() == matched_chunk_type {
-                let removed: Chunk = self.chunks.remove(i);
-                return Ok(removed);
+                return Ok(self.chunks.remove(i));
             }
         }
-        Err("No matching chunk found".to_string().into())
+        Err(PngError::new("No matching chunk found".to_owned()))
     }
 
-    /// The header of this PNG.
     pub fn header(&self) -> &[u8; 8] {
         &self.header
     }
 
-    /// Lists the `Chunk`s stored in this `Png`
     pub fn chunks(&self) -> &[Chunk] {
-        self.chunks.as_slice()
+        &self.chunks
     }
 
-    /// Searches for a `Chunk` with the specified `chunk_type` and returns the first
-    /// matching `Chunk` from this `Png`.
     pub fn chunk_by_type(&self, chunk_type: &str) -> Option<&Chunk> {
-        let chunk_type_from_str: ChunkType = FromStr::from_str(chunk_type).ok()?;
-        for chunk in self.chunks.iter() {
-            if *chunk.chunk_type() == chunk_type_from_str {
-                return Some(chunk);
-            }
-        }
-        return None;
+        let chunk_type_from_str = ChunkType::from_str(chunk_type).ok()?;
+        self.chunks
+            .iter()
+            .find(|c| *c.chunk_type() == chunk_type_from_str)
     }
 
-    /// Returns this `Png` as a byte sequence.
-    /// These bytes will contain the header followed by the bytes of all of the chunks.
     pub fn as_bytes(&self) -> Vec<u8> {
-        let mut v: Vec<u8> = Vec::new();
-        for byte in self.header.iter() {
-            v.push(*byte);
-        }
-        for chunk in self.chunks.iter() {
-            v.extend(chunk.as_bytes())
+        let mut v = Vec::new();
+        v.extend_from_slice(&self.header);
+        for chunk in &self.chunks {
+            v.extend(chunk.as_bytes());
         }
         v
     }
@@ -91,6 +82,12 @@ impl Png {
 #[derive(Debug)]
 pub struct PngError {
     err: String,
+}
+
+impl PngError {
+    pub fn new(err: String) -> Self {
+        Self { err }
+    }
 }
 
 impl fmt::Display for PngError {
@@ -102,45 +99,43 @@ impl fmt::Display for PngError {
 impl std::error::Error for PngError {}
 
 impl TryFrom<&[u8]> for Png {
-    type Error = Error;
+    type Error = PngError;
 
-    fn try_from(bytes: &[u8]) -> Result<Png> {
-        //length check
+    fn try_from(bytes: &[u8]) -> Result<Self, Self::Error> {
         if bytes.len() < 8 {
-            return Err(Box::new(PngError {
-                err: "not enough bytes".to_owned(),
-            }));
+            return Err(PngError::new("not enough bytes".to_string()));
         }
-        let (header, chunk_list) = bytes.split_at(8);
 
-        for i in 0..8 {
-            if header[i] != Png::STANDARD_HEADER[i] {
-                return Err(Box::new(PngError {
-                    err: "header not correct".to_owned(),
-                }));
-            }
+        let (header, chunk_list) = bytes.split_at(8);
+        if header != Png::STANDARD_HEADER {
+            return Err(PngError::new("header not correct".to_string()));
         }
-        let mut chunk_vec: Vec<Chunk> = Vec::new();
+
+        let mut chunk_vec = Vec::new();
         let mut chunk_list = chunk_list;
-        //strat: read length, then split on that many bytes
-        while chunk_list.len() > 0 {
-            //assume start of new chunk
-            //read first four bytes on chunk_list
-            let buf: [u8; 4] = <[u8; 4]>::try_from(&chunk_list[0..4]).unwrap();
-            //check if there's overflow
-            //process length as u64 then see if it's larger than max
-            let buf_copy: [u8; 8] = [0, 0, 0, 0, buf[0], buf[1], buf[2], buf[3]];
-            let big_len: u64 = u64::from_be_bytes(buf_copy);
-            if big_len > u32::MAX.into() {
-                return Err(Box::new(ChunkError {
-                    err: "length exceeds max size of u32".to_owned(),
-                }));
+
+        while !chunk_list.is_empty() {
+            if chunk_list.len() < 8 {
+                return Err(PngError::new("chunk too small".to_string()));
             }
-            let len: u32 = u32::from_be_bytes(buf);
-            let (chunk, rest) = chunk_list.split_at((4 + 4 + len + 4).try_into().unwrap());
+
+            let len_bytes = <[u8; 4]>::try_from(&chunk_list[0..4])
+                .map_err(|_| PngError::new("failed to read chunk length".to_string()))?;
+            let len = u32::from_be_bytes(len_bytes) as usize;
+
+            let full_chunk_len = 4 + 4 + len + 4;
+            if chunk_list.len() < full_chunk_len {
+                return Err(PngError::new("incomplete chunk".to_string()));
+            }
+
+            let (chunk_bytes, rest) = chunk_list.split_at(full_chunk_len);
+            let chunk = Chunk::try_from(chunk_bytes)
+                .map_err(|e| PngError::new(format!("chunk error: {}", e)))?;
+
+            chunk_vec.push(chunk);
             chunk_list = rest;
-            chunk_vec.push(Chunk::try_from(chunk)?);
         }
+
         Ok(Png {
             header: Png::STANDARD_HEADER,
             chunks: chunk_vec,
@@ -150,7 +145,7 @@ impl TryFrom<&[u8]> for Png {
 
 impl fmt::Display for Png {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for chunk in self.chunks.iter() {
+        for chunk in &self.chunks {
             writeln!(f, "{}", chunk)?;
         }
         Ok(())

@@ -1,12 +1,68 @@
-mod args;
 mod chunk;
 mod chunk_type;
 mod commands;
 mod png;
 
-pub type Error = Box<dyn std::error::Error>;
-pub type Result<T> = std::result::Result<T, Error>;
+use crate::chunk::Chunk;
+use crate::chunk::ChunkError;
+use crate::chunk_type::ChunkType;
+use crate::commands as other_commands;
+use crate::png::Png;
 
-fn main() -> Result<()> {
-    todo!()
+use clap::{Parser, Subcommand};
+
+#[derive(Parser)]
+#[command(name = "pngme", version, about = "A PNG steganography CLI")]
+struct Cli {
+    #[command(subcommand)]
+    command: ParsedCommands,
+}
+
+#[derive(Subcommand)]
+enum ParsedCommands {
+    Encode {
+        file_path: String,
+        chunk_type: String,
+        message: String,
+    },
+    Decode {
+        file_path: String,
+        chunk_type: String,
+    },
+    Remove {
+        file_path: String,
+        chunk_type: String,
+    },
+    Print {
+        file_path: String,
+    },
+}
+
+fn main() {
+    let cli = Cli::parse();
+
+    match cli.command {
+        ParsedCommands::Encode {
+            file_path,
+            chunk_type,
+            message,
+        } => {
+            other_commands::encode(&file_path, &chunk_type, &message);
+        }
+        ParsedCommands::Decode {
+            file_path,
+            chunk_type,
+        } => {
+            other_commands::decode(&file_path, &chunk_type);
+        }
+        ParsedCommands::Remove {
+            file_path,
+            chunk_type,
+        } => {
+            other_commands::remove(&file_path, &chunk_type);
+        }
+        ParsedCommands::Print { file_path } => {
+            other_commands::print_chunks(&file_path);
+        }
+    }
 }
